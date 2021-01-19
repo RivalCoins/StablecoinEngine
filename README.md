@@ -101,6 +101,12 @@ _Note for Windows Users: You should use a [Bash Shell][bash] to follow the steps
 
 To compile Kelp from source:
 
+#### Automated Script for Ubuntu Server 20.04
+1. `apt update && apt install -y wget curl sudo git gnupg gnupg1 gnupg2 unzip zip`
+2. `git clone https://github.com/RivalCoins/StablecoinEngine.git`
+3. `StablecoinEngine/scripts/dev_setup.sh`
+
+#### Manual
 1. [Download][golang-download] and [setup][golang-setup] Golang _v1.13 or later_.
     * Confirm that `$GOPATH` is set, and that `GOBIN=$GOPATH/bin`
     * Confirm that `$PATH` includes the full filepath of `$GOBIN`
