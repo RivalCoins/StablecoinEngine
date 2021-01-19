@@ -1,7 +1,8 @@
 sudo echo "Please input root password: "
 
 # Install Go
-wget https://dl.google.com/go/go1.15.6.linux-amd64.tar.gz
+GO_PACKAGE=go1.15.6.linux-amd64.tar.gz
+wget https://dl.google.com/go/$GO_PACKAGE
 
 export GOROOT=$PWD/go-install
 
@@ -15,7 +16,8 @@ echo "export GOBIN=\"$GOBIN\"" >> ~/.bashrc
 export PATH=$PATH:$GOBIN
 echo "PATH=\"$PATH\"" >> ~/.bashrc
 
-tar -xzf go1.15.6.linux-amd64.tar.gz
+tar -xzf $GO_PACKAGE
+rm $GO_PACKAGE
 mv go $GOROOT
 
 # Install Glide
@@ -30,7 +32,7 @@ sudo apt update && sudo apt install -y yarn
 mkdir -p $GOPATH/src/github.com/stellar/kelp
 cd $GOPATH/src/github.com/stellar/kelp
 
-git clone https://github.com/stellar/kelp.git .
+git clone https://github.com/RivalCoins/StablecoinEngine.git .
 
 # Install dependencies
 glide install
