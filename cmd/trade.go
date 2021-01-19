@@ -969,7 +969,7 @@ func validateTrustlines(l logger.Logger, client *horizonclient.Client, botConfig
 	}
 
 	if len(missingTrustlines) > 0 {
-		logger.Fatal(l, fmt.Errorf("error: your trading account does not have the required trustlines: %v", missingTrustlines))
+		//logger.Fatal(l, fmt.Errorf("error: your trading account does not have the required trustlines: %v", missingTrustlines))
 	}
 	l.Info("trustlines valid")
 }

@@ -276,6 +276,7 @@ func (t *Trader) deleteAllOffers(isAsync bool) {
 //        which would cause multiple failures, is unlikely. Even if that happens, it does not necessarily indicate a failed API as
 //        that could just be a coincidence, which is exactly what this synchronization function is preventing against.
 func (t *Trader) synchronizeFetchBalancesOffersTrades() error {
+	log.Printf("****************************************synchronizeFetchBalancesOffersTrades")
 	if t.synchronizeStateLoadEnable && !t.fillTracker.IsRunningInBackground() {
 		// this is purely an optimization block.
 		// run the trades query here so the synchronization logic is cheaper.
@@ -479,6 +480,9 @@ func (t *Trader) update() plugins.UpdateLoopResult {
 		}
 	}
 
+	log.Printf("****************UpdateWithOps param buying: %s", t.buyingAOffers)
+	log.Printf("****************UpdateWithOps param selling: %s", t.sellingAOffers)
+
 	opsOld, e := t.strategy.UpdateWithOps(t.buyingAOffers, t.sellingAOffers)
 	log.Printf("liabilities at the end of a call to UpdateWithOps\n")
 	t.sdex.IEIF().LogAllLiabilities(t.assetBase, t.assetQuote)
@@ -496,8 +500,9 @@ func (t *Trader) update() plugins.UpdateLoopResult {
 		}
 	}
 
-	msos := api.ConvertTM2MSO(opsOld)
-	numUpdateOpsDelete, numUpdateOpsUpdate, numUpdateOpsCreate, e = countOfferChangeTypes(msos)
+	//msos := api.ConvertTM2MSO(opsOld)
+	log.Printf("1-tm****************%s", opsOld)
+	numUpdateOpsDelete, numUpdateOpsUpdate, numUpdateOpsCreate, e = countSellOfferChangeTypes(opsOld)
 	if e != nil {
 		log.Println(e)
 		t.deleteAllOffers(false)
@@ -510,8 +515,10 @@ func (t *Trader) update() plugins.UpdateLoopResult {
 		}
 	}
 
-	ops := api.ConvertMSO2Ops(msos)
+	ops := api.ConvertSellOfferBuildersToSellOps(opsOld)
+	log.Printf("2-top****************%s", ops)
 	for i, filter := range t.submitFilters {
+		log.Printf("3-trader.update applying filter: %s", fmt.Sprintf("%T", filter))
 		ops, e = filter.Apply(ops, t.sellingAOffers, t.buyingAOffers)
 		if e != nil {
 			log.Printf("error in filter index %d: %s\n", i, e)
@@ -526,8 +533,10 @@ func (t *Trader) update() plugins.UpdateLoopResult {
 		}
 	}
 
-	log.Printf("created %d operations to update existing offers\n", len(ops))
+	log.Printf("created %d operations to update existing offers\n*****************trader.update - details: %s", len(ops), ops)
 	if len(ops) > 0 {
+		//if creating submitting an offer with no ooffer id, swap it out with a passivesell
+
 		e = t.exchangeShim.SubmitOps(api.ConvertOperation2TM(ops), t.submitMode, func(hash string, e error) {
 			// if there is an error we want it to count towards the delete cycles threshold, so run the check
 			if e != nil {
@@ -664,6 +673,50 @@ func countOfferChangeTypes(offers []*txnbuild.ManageSellOffer) (int /*numDelete*
 			numCreate++
 		} else {
 			numUpdate++
+		}
+	}
+
+	return numDelete, numUpdate, numCreate, nil
+}
+
+func countSellOfferChangeTypes(offers []build.TransactionMutator) (int /*numDelete*/, int /*numUpdate*/, int /*numCreate*/, error) {
+	numDelete, numUpdate, numCreate := 0, 0, 0
+	for i, o := range offers {
+		var mso *txnbuild.ManageSellOffer
+		var passiveSellOffer *txnbuild.CreatePassiveSellOffer
+
+		if mob, ok := o.(build.ManageOfferBuilder); ok {
+			if mob.PassiveOffer {
+				passiveSellOffer = api.ConvertMOB2PSO(mob)
+			} else {
+				mso = api.ConvertMOB2MSO(mob)
+			}
+		} else if mob, ok := o.(*build.ManageOfferBuilder); ok {
+			if mob.PassiveOffer {
+				passiveSellOffer = api.ConvertMOB2PSO(*mob)
+			} else {
+				mso = api.ConvertMOB2MSO(*mob)
+			}
+		}
+
+		if passiveSellOffer != nil {
+			numCreate++
+		} else if mso != nil {
+			opAmount, e := strconv.ParseFloat(mso.Amount, 64)
+			if e != nil {
+				return 0, 0, 0, fmt.Errorf("invalid operation amount (%s) could not be parsed as float for operation at index %d: %v", mso.Amount, i, o)
+			}
+
+			// 0 amount represents deletion
+			// 0 offer id represents creating a new offer
+			// anything else represents updating an extiing offer
+			if opAmount == 0 {
+				numDelete++
+			} else if mso.OfferID == 0 {
+				numCreate++
+			} else {
+				numUpdate++
+			}
 		}
 	}
 

@@ -180,7 +180,7 @@ func (b BatchedExchange) SubmitOpsSynch(ops []build.TransactionMutator, submitMo
 
 // SubmitOps performs any finalization or submission step needed by the exchange
 func (b BatchedExchange) SubmitOps(opsOld []build.TransactionMutator, submitMode api.SubmitMode, asyncCallback func(hash string, e error)) error {
-	ops := api.ConvertTM2Operation(opsOld)
+	ops := api.ConvertSellOfferBuildersToSellOps(opsOld)
 
 	var e error
 	b.commands, e = b.Ops2Commands(ops, b.baseAsset, b.quoteAsset)

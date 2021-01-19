@@ -147,10 +147,10 @@ func (s *sellSideStrategy) PreUpdate(maxAssetBase float64, maxAssetQuote float64
 
 	// don't place orders if we have nothing to sell or if we cannot buy the asset in exchange
 	nothingToSell := maxAssetBase == 0
-	lineFull := maxAssetQuote == trustQuote
+	lineFull := maxAssetQuote == trustQuote && s.assetQuote.Issuer != s.assetQuote.Issuer
 	if nothingToSell || lineFull {
 		s.desiredLevels = []api.Level{}
-		log.Printf("no capacity to place sell orders (nothingToSell = %v, lineFull = %v)\n", nothingToSell, lineFull)
+		log.Printf("no capacity to place sell orders (nothingToSell = %v, lineFull = %v, maxAssetQuote: %s, trustQuote: %s) maxAssetBase: %s\n", nothingToSell, lineFull, maxAssetQuote, trustQuote, maxAssetBase)
 		return nil
 	}
 
@@ -209,6 +209,14 @@ func (s *sellSideStrategy) computeTargets(level api.Level) (targetPrice *model.N
 	return targetPrice, targetAmount, nil
 }
 
+func convertToPassiveSellOffer(op *txnbuild.ManageSellOffer) *txnbuild.CreatePassiveSellOffer {
+	var passiveSellOffer *txnbuild.CreatePassiveSellOffer
+
+	passiveSellOffer = &txnbuild.CreatePassiveSellOffer{Selling: op.Selling, Buying: op.Buying, Amount: op.Amount, Price: op.Price, SourceAccount: op.SourceAccount}
+
+	return passiveSellOffer
+}
+
 func (s *sellSideStrategy) createPrecedingOffers(
 	precedingLevels []api.Level,
 ) (
@@ -221,6 +229,7 @@ func (s *sellSideStrategy) createPrecedingOffers(
 	hitCapacityLimit := false
 	ops := []txnbuild.Operation{}
 	var newTopOffer *model.Number
+	//var passiveSellOffer *txnbuild.CreatePassiveSellOffer
 
 	for i := 0; i < len(precedingLevels); i++ {
 		if hitCapacityLimit {
@@ -241,7 +250,12 @@ func (s *sellSideStrategy) createPrecedingOffers(
 		}
 
 		if op != nil {
-			ops = append(ops, op)
+			// create passive sell
+			passiveSellOffer := convertToPassiveSellOffer(op)
+
+			ops = append(ops, passiveSellOffer)
+
+			//ops = append(ops, op)
 		}
 
 		// update top offer, newTopOffer is minOffer because this is a sell strategy, and the lowest price is the best (top) price on the orderbook
@@ -267,15 +281,20 @@ func (s *sellSideStrategy) createPrecedingOffers(
 func (s *sellSideStrategy) UpdateWithOps(offers []hProtocol.Offer) (opsOld []build.TransactionMutator, newTopOffer *model.Number, e error) {
 	var ops []txnbuild.Operation
 	deleteOps := []txnbuild.Operation{}
+	//var passiveSellOffer *txnbuild.CreatePassiveSellOffer
+
+	log.Printf("**************sellSideStrategy.UpdateWithOps -offers: %s", offers)
 
 	// first we want to re-create any offers that precede our existing offers and are additions to the existing offers that we have
 	precedingLevels := computePrecedingLevels(offers, s.desiredLevels)
 	var hitCapacityLimit bool
 	var numLevelsConsumed int
+
 	numLevelsConsumed, hitCapacityLimit, ops, newTopOffer, e = s.createPrecedingOffers(precedingLevels)
 	if e != nil {
 		return nil, nil, fmt.Errorf("unable to create preceding offers: %s", e)
 	}
+	log.Printf("**************sellSideStrategy.UpdateWithOps -ops: %s", ops)
 
 	// next we want to adjust our remaining offers to be in line with what is desired
 	// either modifying the existing offers, or creating new offers at the end of our existing offers
@@ -304,8 +323,10 @@ func (s *sellSideStrategy) UpdateWithOps(offers []hProtocol.Offer) (opsOld []bui
 		var offerPrice *model.Number
 		var op *txnbuild.ManageSellOffer
 		if isModify {
+			log.Printf("**************sellSideStrategy.UpdateWithOps - isModify: %s", isModify)
 			offerPrice, hitCapacityLimit, op, e = s.modifySellLevel(offers, existingOffersIdx, i, *targetPrice, *targetAmount)
 		} else {
+			log.Printf("**************sellSideStrategy.UpdateWithOps - isModify: %s", isModify)
 			offerPrice, hitCapacityLimit, op, e = s.createSellLevel(i, *targetPrice, *targetAmount)
 		}
 		if e != nil {
@@ -318,7 +339,10 @@ func (s *sellSideStrategy) UpdateWithOps(offers []hProtocol.Offer) (opsOld []bui
 				// prepend operations that reduce the size of an existing order because they decrease our liabilities
 				ops = append([]txnbuild.Operation{op}, ops...)
 			} else {
-				ops = append(ops, op)
+				passiveSellOffer := convertToPassiveSellOffer(op)
+
+				ops = append(ops, passiveSellOffer)
+				//ops = append(ops, op)
 			}
 		}
 
@@ -349,6 +373,8 @@ func (s *sellSideStrategy) computeRemainderAmount(incrementalSellAmount float64,
 	if e != nil {
 		return 0, 0, e
 	}
+
+	log.Printf("############################### sellingCapacity=%.8f, incrementalSellAmount=%.8f, buyingCapacity=%.8f, incrementalBuyAmount=%.8f", availableSellingCapacity.Selling, incrementalSellAmount, availableBuyingCapacity.Buying, incrementalBuyAmount)
 
 	if availableSellingCapacity.Selling >= incrementalSellAmount && availableBuyingCapacity.Buying >= incrementalBuyAmount {
 		return 0, 0, fmt.Errorf("error: (programmer?) unable to create offer but available capacities were more than the attempted offer amounts, sellingCapacity=%.8f, incrementalSellAmount=%.8f, buyingCapacity=%.8f, incrementalBuyAmount=%.8f",

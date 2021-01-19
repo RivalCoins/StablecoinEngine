@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"math"
 
 	"github.com/stellar/go/build"
@@ -237,51 +238,105 @@ type ExchangeShim interface {
 	FillTrackable
 }
 
+// Tthe basics off any type of offer (buy, sell, passive sell)
+type OfferBasics struct {
+	Selling      build.Asset
+	Buying       build.Asset
+	Amount       string
+	Price        xdr.Price
+	OfferID      int64
+	SouceAccount txnbuild.Account
+}
+
 // ConvertOperation2TM is a temporary adapter to support transitioning from the old Go SDK to the new SDK without having to bump the major version
 func ConvertOperation2TM(ops []txnbuild.Operation) []build.TransactionMutator {
 	muts := []build.TransactionMutator{}
 	for _, o := range ops {
 		var mob build.ManageOfferBuilder
-		if mso, ok := o.(*txnbuild.ManageSellOffer); ok {
+		log.Printf("*******************1-exchange.ConvertOperation2TM - op type: %s", fmt.Sprintf("%T", o))
+		var isPassiveSell bool
+		var amount string
+		var selling txnbuild.Asset
+		var buying txnbuild.Asset
+		var price string
+		var offerId int64
+		var sourceAccount txnbuild.Account
+		var convertibleOperation bool
+
+		if passiveSellOffer, ok := o.(*txnbuild.CreatePassiveSellOffer); ok {
+			log.Printf("*******************2a-exchange.ConvertOperation2TM")
+			isPassiveSell = true
+			amount = passiveSellOffer.Amount
+			selling = passiveSellOffer.Selling
+			buying = passiveSellOffer.Buying
+			price = passiveSellOffer.Price
+			offerId = 0
+			sourceAccount = passiveSellOffer.SourceAccount
+
+			convertibleOperation = ok
+		} else if manageSellOffer, ok := o.(*txnbuild.ManageSellOffer); ok {
+			log.Printf("*******************2b-exchange.ConvertOperation2TM - offer: %s", manageSellOffer)
+			isPassiveSell = false
+			amount = manageSellOffer.Amount
+			selling = manageSellOffer.Selling
+			buying = manageSellOffer.Buying
+			price = manageSellOffer.Price
+			offerId = manageSellOffer.OfferID
+			sourceAccount = manageSellOffer.SourceAccount
+
+			convertibleOperation = ok
+		}
+
+		log.Printf("*******************3-exchange.ConvertOperation2TM - convertible:  %s", convertibleOperation)
+
+		if convertibleOperation {
+			log.Printf("*******************4-exchange.ConvertOperation2TM - price: %s, amount: %s", price, amount)
 			mob = build.ManageOffer(
-				false,
-				build.Amount(mso.Amount),
+				isPassiveSell,
+				build.Amount(amount),
 				build.Rate{
-					Selling: build.Asset{Code: mso.Selling.GetCode(), Issuer: mso.Selling.GetIssuer(), Native: mso.Selling.IsNative()},
-					Buying:  build.Asset{Code: mso.Buying.GetCode(), Issuer: mso.Buying.GetIssuer(), Native: mso.Buying.IsNative()},
-					Price:   build.Price(mso.Price),
+					Selling: build.Asset{Code: selling.GetCode(), Issuer: selling.GetIssuer(), Native: selling.IsNative()},
+					Buying:  build.Asset{Code: buying.GetCode(), Issuer: buying.GetIssuer(), Native: buying.IsNative()},
+					Price:   build.Price(price),
 				},
-				build.OfferID(mso.OfferID),
+				build.OfferID(offerId),
 			)
-			if mso.SourceAccount != nil {
-				mob.Mutate(build.SourceAccount{AddressOrSeed: mso.SourceAccount.GetAccountID()})
+			log.Printf("*******************5-exchange.ConvertOperation2TM")
+			if sourceAccount != nil {
+				mob.Mutate(build.SourceAccount{AddressOrSeed: sourceAccount.GetAccountID()})
 			}
 		} else {
 			panic(fmt.Sprintf("could not convert txnbuild.Operation to build.TransactionMutator: %v\n", o))
 		}
+
+		log.Printf("*******************6-exchange.ConvertOperation2TM - price: %s, passive price: %s, ManageOfferBuilder: %s", mob.MO.Price, mob.MO.Price, mob)
+
 		muts = append(muts, mob)
 	}
 	return muts
 }
 
 // ConvertTM2Operation is a temporary adapter to support transitioning from the old Go SDK to the new SDK without having to bump the major version
-func ConvertTM2Operation(muts []build.TransactionMutator) []txnbuild.Operation {
+/*func ConvertTM2Operation(muts []build.TransactionMutator) []txnbuild.Operation {
 	msos := ConvertTM2MSO(muts)
 	return ConvertMSO2Ops(msos)
 }
+*/
 
 // ConvertTM2MSO converts mutators from the old SDK to ManageSellOffer ops in the new one.
 func ConvertTM2MSO(muts []build.TransactionMutator) []*txnbuild.ManageSellOffer {
 	msos := []*txnbuild.ManageSellOffer{}
 	for _, m := range muts {
+		log.Printf("****************exchange.ConvertTM2MSO - input type:%s, input data: %s", fmt.Sprintf("%T", m), m)
 		var mso *txnbuild.ManageSellOffer
 		if mob, ok := m.(build.ManageOfferBuilder); ok {
-			mso = convertMOB2MSO(mob)
+			mso = ConvertMOB2MSO(mob)
 		} else if mob, ok := m.(*build.ManageOfferBuilder); ok {
-			mso = convertMOB2MSO(*mob)
+			mso = ConvertMOB2MSO(*mob)
 		} else {
 			panic(fmt.Sprintf("could not convert build.TransactionMutator to txnbuild.Operation: %v (type=%T)\n", m, m))
 		}
+		log.Printf("****************exchange.ConvertTM2MSO - output: %s", mso)
 		msos = append(msos, mso)
 	}
 	return msos
@@ -296,7 +351,8 @@ func ConvertMSO2Ops(msos []*txnbuild.ManageSellOffer) []txnbuild.Operation {
 	return ops
 }
 
-func convertMOB2MSO(mob build.ManageOfferBuilder) *txnbuild.ManageSellOffer {
+func ConvertMOB2MSO(mob build.ManageOfferBuilder) *txnbuild.ManageSellOffer {
+	log.Printf("*******************exchange.ConvertMOB2MSO - ManagOfferBuilder is passsive: %s", mob.PassiveOffer)
 	mso := &txnbuild.ManageSellOffer{
 		Amount:  fmt.Sprintf("%.7f", float64(mob.MO.Amount)/math.Pow(10, 7)),
 		OfferID: int64(mob.MO.OfferId),
@@ -331,4 +387,68 @@ func convertMOB2MSO(mob build.ManageOfferBuilder) *txnbuild.ManageSellOffer {
 	}
 
 	return mso
+}
+
+func ConvertMOB2PSO(mob build.ManageOfferBuilder) *txnbuild.CreatePassiveSellOffer {
+	log.Printf("*******************exchange.ConvertMOB2PSO - ManagOfferBuilder is passsive: %s", mob.PassiveOffer)
+	pso := &txnbuild.CreatePassiveSellOffer{
+		Amount: fmt.Sprintf("%.7f", float64(mob.PO.Amount)/math.Pow(10, 7)),
+		Price:  fmt.Sprintf("%.7f", float64(mob.PO.Price.N)/float64(mob.PO.Price.D)),
+	}
+	if mob.O.SourceAccount != nil {
+		pso.SourceAccount = &txnbuild.SimpleAccount{
+			AccountID: mob.O.SourceAccount.Address(),
+		}
+	}
+
+	if mob.PO.Buying.Type == xdr.AssetTypeAssetTypeNative {
+		pso.Buying = txnbuild.NativeAsset{}
+	} else {
+		var tipe, code, issuer string
+		mob.PO.Buying.MustExtract(&tipe, &code, &issuer)
+		pso.Buying = txnbuild.CreditAsset{
+			Code:   code,
+			Issuer: issuer,
+		}
+	}
+
+	if mob.PO.Selling.Type == xdr.AssetTypeAssetTypeNative {
+		pso.Selling = txnbuild.NativeAsset{}
+	} else {
+		var tipe, code, issuer string
+		mob.PO.Selling.MustExtract(&tipe, &code, &issuer)
+		pso.Selling = txnbuild.CreditAsset{
+			Code:   code,
+			Issuer: issuer,
+		}
+	}
+
+	return pso
+}
+
+// ConvertSellOfferBuildersToSellOps converts manage sell offers into Operations.
+func ConvertSellOfferBuildersToSellOps(muts []build.TransactionMutator) []txnbuild.Operation {
+	ops := []txnbuild.Operation{}
+
+	for _, m := range muts {
+		log.Printf("****************exchange.ConvertSellOfferBuildersToSellOps - input type:%s, input data: %s", fmt.Sprintf("%T", m), m)
+
+		if mob, ok := m.(build.ManageOfferBuilder); ok {
+			if mob.PassiveOffer {
+				ops = append(ops, ConvertMOB2PSO(mob))
+			} else {
+				ops = append(ops, ConvertMOB2MSO(mob))
+			}
+		} else if mob, ok := m.(*build.ManageOfferBuilder); ok {
+			if mob.PassiveOffer {
+				ops = append(ops, ConvertMOB2PSO(*mob))
+			} else {
+				ops = append(ops, ConvertMOB2MSO(*mob))
+			}
+		} else {
+			panic(fmt.Sprintf("could not convert build.TransactionMutator to txnbuild.Operation: %v (type=%T)\n", m, m))
+		}
+	}
+
+	return ops
 }

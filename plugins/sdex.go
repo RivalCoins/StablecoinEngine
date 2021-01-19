@@ -233,7 +233,16 @@ func (sdex *SDEX) _assetBalance(asset hProtocol.Asset) (*api.Balance, error) {
 		return nil, fmt.Errorf("error: unable to load account to fetch balance: %s", err)
 	}
 
+	totalAssetCollateral := 0.0
+
 	for _, balance := range account.Balances {
+		assetCollateral, e := strconv.ParseFloat(balance.Balance, 64)
+		if e != nil {
+			log.Fatalf("error: could not prase asset balance: %s", e)
+		} else {
+			totalAssetCollateral += assetCollateral
+		}
+
 		if utils.AssetsEqual(balance.Asset, asset) {
 			b, e := strconv.ParseFloat(balance.Balance, 64)
 			if e != nil {
@@ -259,6 +268,17 @@ func (sdex *SDEX) _assetBalance(asset hProtocol.Asset) (*api.Balance, error) {
 			}, nil
 		}
 	}
+
+	// if asset is issued by trading account, return a collateral based balance
+	if asset.Issuer == account.AccountID {
+		maxPossibleAssetValue := maxLumenTrust
+		return &api.Balance{
+			Balance: maxPossibleAssetValue - totalAssetCollateral,
+			Trust:   maxPossibleAssetValue,
+			Reserve: sdex.minReserve(account.SubentryCount) + sdex.operationalBuffer,
+		}, nil
+	}
+
 	return nil, errors.New("could not find a balance for the asset passed in")
 }
 
@@ -367,7 +387,7 @@ func (sdex *SDEX) SubmitOps(ops []build.TransactionMutator, submitMode api.Submi
 
 // submitOps submits the passed in operations to the network in a single transaction. Asynchronous or not based on flag.
 func (sdex *SDEX) submitOps(opsOld []build.TransactionMutator, asyncCallback func(hash string, e error), asyncMode bool) error {
-	ops := api.ConvertTM2Operation(opsOld)
+	ops := api.ConvertSellOfferBuildersToSellOps(opsOld)
 
 	// compute fee per operation
 	opFee, e := sdex.opFeeStroopsFn()
