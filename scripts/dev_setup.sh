@@ -40,8 +40,16 @@ glide install
 # Install astilectron-bundler
 go get -u github.com/asticode/go-astilectron-bundler/...
 
-# Build
+# Dev Build
 ./scripts/build.sh
 
-# Confirm build
+# Confirm dev build
 ./bin/kelp version
+
+# Production build
+export AMPLITUDE_API_KEY=foobar
+echo "export AMPLITUDE_API_KEY=\"$AMPLITUDE_API_KEY\"" >> ~/.bashrc
+./scripts/build.sh -d -f
+
+# Confirm production build
+echo "Confirm production build in the 'build' directory"
