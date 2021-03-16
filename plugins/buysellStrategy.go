@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"fmt"
-	"log"
 
 	hProtocol "github.com/stellar/go/protocols/horizon"
 	"github.com/stellar/kelp/api"
@@ -68,7 +67,6 @@ func makeBuySellStrategy(
 	assetQuote *hProtocol.Asset,
 	config *BuySellConfig,
 ) (api.Strategy, error) {
-	log.Printf("1-#################################################################")
 	offsetSell := rateOffset{
 		percent:      config.RateOffsetPercent,
 		absolute:     config.RateOffset,
@@ -117,17 +115,6 @@ func makeBuySellStrategy(
 	if e != nil {
 		return nil, fmt.Errorf("cannot make the buysell strategy because we could not make the buy side feed pair: %s", e)
 	}
-
-	// always buy back @ 1:1
-	var buyLevels []StaticLevel
-	for _, configuredLevel := range config.Levels {
-		log.Printf("************buysellStrategy.makeBuySellStrategy configured level spread: %s", configuredLevel.SPREAD)
-		fixedBuyLevel := StaticLevel{SPREAD: 0.0, AMOUNT: configuredLevel.AMOUNT}
-		buyLevels = append(buyLevels, fixedBuyLevel)
-	}
-
-	log.Printf("************buysellStrategy.makeBuySellStrategy overridden buy levels: %s", buyLevels)
-
 	// switch sides of base/quote here for buy side
 	buySideStrategy := makeSellSideStrategy(
 		sdex,
@@ -136,7 +123,7 @@ func makeBuySellStrategy(
 		assetQuote,
 		assetBase,
 		makeStaticSpreadLevelProvider(
-			buyLevels,
+			config.Levels,
 			config.AmountOfABase,
 			offsetBuy,
 			buySideFeedPair,
