@@ -1,4 +1,5 @@
-sudo echo "Please input root password: "
+# Install pre-requisites
+apt update && apt install -y wget curl sudo git gnupg gnupg1 gnupg2 unzip zip
 
 # Install Go
 GO_PACKAGE=go1.15.6.linux-amd64.tar.gz
@@ -21,7 +22,10 @@ rm $GO_PACKAGE
 mv go $GOROOT
 
 # Install Glide
-curl https://glide.sh/get | sh
+wget https://github.com/Masterminds/glide/releases/download/v0.13.3/glide-v0.13.3-linux-amd64.tar.gz
+tar -xvf glide-v0.13.3-linux-amd64.tar.gz
+cp linux-amd64/glide /bin/glide
+rm -rf linux-amd64 glide-v0.13.3-linux-amd64.tar.gz
 
 # Install Yarn
 curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
