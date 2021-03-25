@@ -1,5 +1,5 @@
 # Install pre-requisites
-apt update && apt install -y wget curl sudo git gnupg gnupg1 gnupg2 unzip zip
+sudo apt update && apt install -y wget curl sudo git gnupg gnupg1 gnupg2 unzip zip
 
 # Install Go
 GO_PACKAGE=go1.15.6.linux-amd64.tar.gz
