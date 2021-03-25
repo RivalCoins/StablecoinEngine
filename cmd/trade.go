@@ -161,7 +161,7 @@ func init() {
 	options.strategy = tradeCmd.Flags().StringP("strategy", "s", "", "(required) type of strategy to run")
 	options.stratConfigPath = tradeCmd.Flags().StringP("stratConf", "f", "", "strategy config file path")
 	// long-only flags
-	options.operationalBuffer = tradeCmd.Flags().Float64("operationalBuffer", 20, "buffer of native XLM to maintain beyond minimum account balance requirement")
+	options.operationalBuffer = tradeCmd.Flags().Float64("operationalBuffer", 1, "buffer of native XLM to maintain beyond minimum account balance requirement")
 	options.operationalBufferNonNativePct = tradeCmd.Flags().Float64("operationalBufferNonNativePct", 0.001, "buffer of non-native assets to maintain as a percentage (0.001 = 0.1%)")
 	options.simMode = tradeCmd.Flags().Bool("sim", false, "simulate the bot's actions without placing any trades")
 	options.logPrefix = tradeCmd.Flags().StringP("log", "l", "", "log to a file (and stdout) with this prefix for the filename")
