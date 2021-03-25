@@ -24,7 +24,7 @@ mv go $GOROOT
 # Install Glide
 wget https://github.com/Masterminds/glide/releases/download/v0.13.3/glide-v0.13.3-linux-amd64.tar.gz
 tar -xvf glide-v0.13.3-linux-amd64.tar.gz
-cp linux-amd64/glide /bin/glide
+sudo cp linux-amd64/glide /bin/glide
 rm -rf linux-amd64 glide-v0.13.3-linux-amd64.tar.gz
 
 # Install Yarn
